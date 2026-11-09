@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0f172a">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<title>QuitLog</title>
+<style>
+:root{--bg:#0f172a;--card:#1e293b;--card2:#273449;--text:#f1f5f9;--mut:#94a3b8;--cig:#ff7a45;--vape:#36cfc9;--ok:#4ade80;--warn:#fbbf24;--bad:#f87171}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Roboto,sans-serif;overscroll-behavior:none}
+body{padding:env(safe-area-inset-top) 0 calc(72px + env(safe-area-inset-bottom)) 0;min-height:100vh}
+main{max-width:520px;margin:0 auto;padding:14px}
+h1{font-size:20px;margin:6px 2px 12px}
+h2{font-size:15px;margin:0 0 10px;color:var(--mut);font-weight:600;letter-spacing:.3px}
+.card{background:var(--card);border-radius:18px;padding:16px;margin-bottom:14px}
+.row{display:flex;gap:12px}
+.big{flex:1;border:0;border-radius:20px;padding:22px 8px;color:#111;font-weight:800;font-size:17px;text-align:center;touch-action:manipulation}
+.big:active{transform:scale(.96)}
+.big .n{display:block;font-size:46px;line-height:1.1}
+.big small{display:block;font-weight:600;opacity:.75;font-size:12px;margin-top:2px}
+.cig{background:var(--cig)}.vape{background:var(--vape)}
+.mut{color:var(--mut);font-size:13px}
+.btn{background:var(--card2);color:var(--text);border:0;border-radius:12px;padding:11px 14px;font-size:14px;font-weight:600}
+.btn.pri{background:var(--ok);color:#052e16}
+.btn.dng{background:#3b1d24;color:var(--bad)}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+nav{position:fixed;left:0;right:0;bottom:0;background:#0b1222;display:flex;padding-bottom:env(safe-area-inset-bottom);border-top:1px solid #1e293b}
+nav button{flex:1;background:none;border:0;color:var(--mut);padding:12px 0;font-size:12px;font-weight:600}
+nav button.on{color:var(--ok)}
+nav span{display:block;font-size:20px}
+.bar{height:10px;background:var(--card2);border-radius:6px;overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;background:var(--ok);border-radius:6px;transition:width .4s}
+.bar i.over{background:var(--bad)}
+.item{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #2b3a50;font-size:14px}
+.item:last-child{border:0}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
+.msg{font-size:17px;line-height:1.45;font-weight:600}
+.timer{font-size:34px;font-weight:800;margin:6px 0;font-variant-numeric:tabular-nums}
+.ring{text-align:center}
+.banner{border-radius:16px;padding:14px;margin-bottom:14px;font-size:15px;line-height:1.4}
+.banner.good{background:#14352a;color:#bbf7d0}.banner.soft{background:#3b2f14;color:#fde68a}
+.seg{display:flex;background:var(--card2);border-radius:10px;padding:3px;margin-bottom:10px}
+.seg button{flex:1;background:none;border:0;color:var(--mut);padding:7px;border-radius:8px;font-weight:600}
+.seg button.on{background:var(--bg);color:var(--text)}
+canvas{width:100%;display:block}
+input[type=number],input[type=datetime-local]{background:var(--card2);color:var(--text);border:0;border-radius:10px;padding:10px;font-size:15px;width:100%}
+.stepper{display:flex;align-items:center;gap:10px;margin:8px 0}
+.stepper b{min-width:60px;text-align:center;font-size:20px}
+.stepper .btn{width:44px;padding:10px 0;font-size:20px}
+.up{color:var(--bad)}.down{color:var(--ok)}
+#toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#e2e8f0;color:#0f172a;padding:10px 16px;border-radius:20px;font-weight:600;font-size:14px;opacity:0;pointer-events:none;transition:opacity .25s;z-index:9;max-width:90%}
+#toast.show{opacity:1}
+.hide{display:none}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<nav>
+  <button data-v="today" class="on"><span>🏠</span>Today</button>
+  <button data-v="trends"><span>📈</span>Trends</button>
+  <button data-v="quit"><span>🌱</span>Quit</button>
+</nav>
+<div id="toast"></div>
+
+<script>
+(()=>{
+const KEY='quitlog.v1';
+const DAY=86400000;
+const blank=()=>({logs:[],settings:{cigLimit:null,vapeLimit:null},breaks:[],active:null,notice:null});
+let S=load();
+let view='today', range=7;
+
+function load(){try{const s=JSON.parse(localStorage.getItem(KEY));if(s)return Object.assign(blank(),s)}catch(e){}return blank()}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+const $=s=>document.querySelector(s);
+const dk=t=>{const d=new Date(t);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+const startOfDay=t=>{const d=new Date(t);d.setHours(0,0,0,0);return d.getTime()};
+const fmtTime=t=>new Date(t).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+const fmtDate=t=>new Date(t).toLocaleDateString([],{weekday:'short',day:'numeric',month:'short'});
+function dur(ms){ms=Math.max(0,ms);const d=Math.floor(ms/DAY),h=Math.floor(ms%DAY/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000);
+  return d?`${d}d ${h}h ${m}m`:h?`${h}h ${m}m ${s}s`:`${m}m ${s}s`}
+function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove('show'),2200)}
+
+/* ---------- data helpers ---------- */
+const countBetween=(type,a,b)=>S.logs.filter(l=>l.type===type&&l.t>=a&&l.t<b).length;
+const todayCount=type=>countBetween(type,startOfDay(Date.now()),Infinity);
+function days(n,offset=0){ // oldest -> newest, ending `offset` days before today
+  const out=[];const today=startOfDay(Date.now());
+  for(let i=n-1+offset;i>=offset;i--){const a=today-i*DAY;const a2=new Date(a);a2.setDate(a2.getDate());
+    const b=a+DAY;out.push({a,label:new Date(a).toLocaleDateString([],{day:'numeric',month:'short'}),cig:countBetween('cig',a,b),vape:countBetween('vape',a,b)})}
+  return out}
+const lastLog=type=>S.logs.filter(l=>l.type===type).reduce((m,l)=>Math.max(m,l.t),0);
+
+/* ---------- actions ---------- */
+function add(type,t=Date.now()){
+  S.logs.push({id:t+'-'+Math.random().toString(36).slice(2,7),t,type});
+  S.logs.sort((a,b)=>a.t-b.t);
+  navigator.vibrate&&navigator.vibrate(25);
+  const a=S.active;
+  if(a&&t>=a.start&&(type==='cig'||(a.vape&&type==='vape'))){slip()}
+  save();render();
+  const lim=type==='cig'?S.settings.cigLimit:S.settings.vapeLimit;
+  if(!S.notice) toast(lim&&todayCount(type)>lim?'Over your limit today. Tomorrow is a fresh start.':'Logged '+(type==='cig'?'cigarette':'vape puff')+' at '+fmtTime(t));
+}
+function removeLog(id){S.logs=S.logs.filter(l=>l.id!==id);save();render()}
+function undo(){const l=S.logs[S.logs.length-1];if(!l)return;removeLog(l.id);toast('Last entry removed')}
+function startBreak(d,vape){S.active={start:Date.now(),days:d,vape:!!vape};S.notice=null;save();render();toast(`${d}-day smoke-free challenge started. You've got this.`)}
+function slip(){
+  const a=S.active;if(!a)return;const lasted=Date.now()-a.start;
+  S.breaks.push({start:a.start,end:Date.now(),days:a.days,vape:a.vape,outcome:'slipped',lasted});
+  S.active=null;
+  S.notice={kind:'soft',text:`You lasted ${dur(lasted)}. A slip is data, not failure. Most people who quit try several times. What triggered it? Start again whenever you're ready.`};
+}
+function endBreakEarly(){if(!S.active)return;const a=S.active;S.breaks.push({start:a.start,end:Date.now(),days:a.days,vape:a.vape,outcome:'stopped',lasted:Date.now()-a.start});S.active=null;save();render()}
+function checkComplete(){
+  const a=S.active;if(!a)return;
+  if(Date.now()-a.start>=a.days*DAY){
+    S.breaks.push({start:a.start,end:Date.now(),days:a.days,vape:a.vape,outcome:'done',lasted:a.days*DAY});
+    S.active=null;
+    S.notice={kind:'good',text:`🎉 ${a.days} days smoke-free! That's a real win. Your body has already started recovering. Want to go for a longer one?`};
+    save();render();
+  }}
+
+/* ---------- messages ---------- */
+const MILESTONES=[
+ [0,'You just started. The first hours are the hardest. Drink some water and take 10 slow breaths.'],
+ [20*60000,'20 minutes in. Your heart rate and blood pressure are starting to settle.'],
+ [2*3600000,'2 hours in. Cravings come in waves of a few minutes. Ride this one out.'],
+ [8*3600000,'8 hours in. Carbon monoxide in your blood is dropping, so oxygen levels are improving.'],
+ [12*3600000,'Half a day done. Every hour you stack makes the next one easier.'],
+ [24*3600000,'24 hours! Your risk of a heart attack begins to fall. Keep going.'],
+ [36*3600000,'36 hours. If cravings hit, delay 10 minutes. They fade.'],
+ [48*3600000,'48 hours. Nicotine is mostly out of your body and taste and smell start coming back.'],
+ [60*3600000,'60 hours, nearly there. Treat yourself to something nice today.'],
+ [72*3600000,'72 hours. Breathing usually feels easier now. The worst of the physical withdrawal is behind you.'],
+ [5*DAY,'5 days. You\'re building a new normal.'],
+ [7*DAY,'One full week! Remember how this feels.']
+];
+const GENERIC=['Every cigarette you skip is a vote for the person you want to be.','Cravings pass in a few minutes. You\'re stronger than the urge.','Progress, not perfection. Fewer today than yesterday is a win.','Think of the money you\'re saving and what you\'ll spend it on.','Your lungs thank you every single hour.','Delay, deep breath, drink water, move. The craving will lose.'];
+function milestoneMsg(el){let m=MILESTONES[0][1];for(const [t,s] of MILESTONES){if(el>=t)m=s}return m}
+
+/* ---------- render ---------- */
+function render(){
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===view));
+  const app=$('#app');
+  app.innerHTML=view==='today'?todayView():view==='trends'?trendsView():quitView();
+  if(view==='trends')drawTrends();
+  bind();tick();
+}
+
+function noticeHtml(){return S.notice?`<div class="banner ${S.notice.kind}">${S.notice.text}<div class="btns"><button class="btn" data-act="dismiss">OK</button></div></div>`:''}
+
+function limitBar(type,label){
+  const lim=type==='cig'?S.settings.cigLimit:S.settings.vapeLimit;const n=todayCount(type);
+  if(!lim)return '';
+  const p=Math.min(100,n/lim*100);
+  return `<div class="mut" style="margin-top:10px">${label}: ${n} of ${lim} today</div><div class="bar"><i class="${n>lim?'over':''}" style="width:${p}%"></i></div>`}
+
+function breakCard(){
+  const a=S.active;if(!a)return '';
+  const el=Date.now()-a.start,tot=a.days*DAY,p=Math.min(100,el/tot*100);
+  return `<div class="card"><h2>🌱 SMOKE-FREE CHALLENGE · ${a.days} DAYS${a.vape?' · incl. vape':''}</h2>
+  <div class="timer" id="brkT">${dur(el)}</div>
+  <div class="bar"><i style="width:${p}%" id="brkB"></i></div>
+  <div class="mut" style="margin:6px 0 12px" id="brkR">${dur(tot-el)} to go</div>
+  <div class="msg" id="brkM">${milestoneMsg(el)}</div></div>`}
+
+function todayView(){
+  const c=todayCount('cig'),v=todayCount('vape');
+  const lc=lastLog('cig');
+  const todays=S.logs.filter(l=>l.t>=startOfDay(Date.now())).slice().reverse();
+  return `<h1>${new Date().toLocaleDateString([],{weekday:'long',day:'numeric',month:'long'})}</h1>
+  ${noticeHtml()}${breakCard()}
+  <div class="row">
+    <button class="big cig" data-add="cig"><span class="n">${c}</span>🚬 Cigarette<small>tap to add</small></button>
+    <button class="big vape" data-add="vape"><span class="n">${v}</span>💨 Vape puff<small>tap to add</small></button>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <div class="mut" id="gap">${lc?`Since last cigarette: <b>${dur(Date.now()-lc)}</b>`:'No cigarettes logged yet'}</div>
+    ${limitBar('cig','Cigarettes')}${limitBar('vape','Vape puffs')}
+    <div class="btns"><button class="btn" data-act="undo">↩ Undo last</button><button class="btn" data-act="manual">＋ Add earlier</button></div>
+    <div id="manual" class="hide" style="margin-top:10px">
+      <input type="datetime-local" id="mt">
+      <div class="btns"><button class="btn" data-man="cig">Add cigarette</button><button class="btn" data-man="vape">Add vape</button></div>
+    </div>
+  </div>
+  <div class="card"><h2>TODAY'S LOG</h2>
+  ${todays.length?todays.map(l=>`<div class="item"><span><span class="dot" style="background:var(--${l.type})"></span>${l.type==='cig'?'Cigarette':'Vape puff'}</span><span class="mut">${fmtTime(l.t)} <button class="btn" style="padding:4px 9px;margin-left:8px" data-del="${l.id}">✕</button></span></div>`).join(''):'<div class="mut">Nothing logged today.</div>'}
+  </div>`}
+
+function trendsView(){
+  const cur=days(range),prev=days(range,range);
+  const sum=(arr,k)=>arr.reduce((s,d)=>s+d[k],0);
+  const sc=sum(cur,'cig'),sp=sum(prev,'cig'),sv=sum(cur,'vape'),spv=sum(prev,'vape');
+  const chg=(a,b)=>b?`<span class="${a>b?'up':'down'}">${a>b?'▲':'▼'} ${Math.abs(Math.round((a-b)/b*100))}%</span> vs previous ${range} days`:'<span class="mut">no earlier data to compare</span>';
+  return `<h1>Trends</h1>
+  <div class="seg">${[7,14,30].map(r=>`<button data-r="${r}" class="${r===range?'on':''}">${r} days</button>`).join('')}</div>
+  <div class="card"><h2>🚬 CIGARETTES</h2>
+    <div style="font-size:28px;font-weight:800">${(sc/range).toFixed(1)} <span class="mut" style="font-size:14px">per day · ${sc} total</span></div>
+    <div class="mut">${chg(sc,sp)}</div>
+    <h2 style="margin-top:16px">💨 VAPE PUFFS</h2>
+    <div style="font-size:28px;font-weight:800">${(sv/range).toFixed(1)} <span class="mut" style="font-size:14px">per day · ${sv} total</span></div>
+    <div class="mut">${chg(sv,spv)}</div></div>
+  <div class="card"><h2>DAILY COUNT</h2><canvas id="c1" height="190"></canvas>
+    <div class="mut" style="margin-top:6px"><span class="dot" style="background:var(--cig)"></span>Cigarettes <span class="dot" style="background:var(--vape);margin-left:10px"></span>Vape</div></div>
+  <div class="card"><h2>WHEN YOU SMOKE (HOUR OF DAY)</h2><canvas id="c2" height="150"></canvas>
+    <div class="mut" style="margin-top:6px">Spot your trigger times, then plan something else for those hours.</div></div>
+  <div class="card"><h2>DATA</h2><div class="btns"><button class="btn" data-act="csv">⬇ Export CSV</button><button class="btn dng" data-act="reset">Reset all data</button></div></div>`}
+
+function quitView(){
+  const d7=days(7);const avg=d7.reduce((s,d)=>s+d.cig,0)/7;
+  const hist=S.breaks.slice().reverse();
+  const best=S.breaks.reduce((m,b)=>Math.max(m,b.lasted||0),0);
+  return `<h1>Quit plan</h1>${noticeHtml()}${S.active?breakCard()+`<div class="btns" style="margin:-4px 0 14px"><button class="btn dng" data-act="stopbreak">End challenge</button></div>`:`
+  <div class="card"><h2>🌱 START A SMOKE-FREE CHALLENGE</h2>
+    <div class="mut">Pick a stretch with no cigarettes. The app tracks it and keeps you going.</div>
+    <label class="mut" style="display:block;margin-top:10px"><input type="checkbox" id="incv"> Include vaping</label>
+    <div class="btns"><button class="btn pri" data-start="1">1 day</button><button class="btn pri" data-start="3">3 days</button><button class="btn pri" data-start="7">7 days</button><button class="btn" data-start="0">Custom…</button></div></div>`}
+  <div class="card"><h2>📉 DAILY LIMITS (CUT DOWN SLOWLY)</h2>
+    <div class="mut">Last 7 days average: <b>${avg.toFixed(1)}</b> cigarettes/day. A good pace is about 1 fewer per day each week.</div>
+    ${stepper('cig','Cigarettes',S.settings.cigLimit)}${stepper('vape','Vape puffs',S.settings.vapeLimit)}
+    <div class="btns"><button class="btn" data-act="suggest">Suggest a limit</button><button class="btn" data-act="nolimit">Clear limits</button></div></div>
+  <div class="card"><h2>🏆 YOUR CHALLENGES</h2>
+    ${best?`<div class="mut" style="margin-bottom:8px">Longest stretch so far: <b>${dur(best)}</b></div>`:''}
+    ${hist.length?hist.map(b=>`<div class="item"><span>${b.outcome==='done'?'✅':b.outcome==='slipped'?'🔁':'⏹'} ${b.days}-day goal · lasted ${dur(b.lasted)}</span><span class="mut">${fmtDate(b.start)}</span></div>`).join(''):'<div class="mut">No challenges yet. Your first one starts above.</div>'}</div>
+  <div class="card"><div class="mut">Tip: when a craving hits, wait 10 minutes, drink water, breathe slowly. Most cravings fade within 3 to 5 minutes. If you want extra support, talk to a doctor or a quitline about options like nicotine replacement.</div></div>`}
+
+function stepper(type,label,val){return `<div class="mut" style="margin-top:12px">${label} per day</div><div class="stepper"><button class="btn" data-step="${type}:-1">−</button><b>${val==null?'off':val}</b><button class="btn" data-step="${type}:1">+</button></div>`}
+
+/* ---------- charts ---------- */
+function setup(c){const dpr=window.devicePixelRatio||1;const w=c.clientWidth,h=+c.getAttribute('height');c.width=w*dpr;c.height=h*dpr;const x=c.getContext('2d');x.scale(dpr,dpr);return {x,w,h}}
+function bars(c,labels,series,colors){
+  const {x,w,h}=setup(c);const pad={l:24,r:4,t:8,b:22};
+  const n=labels.length;const totals=labels.map((_,i)=>series.reduce((s,a)=>s+a[i],0));
+  const max=Math.max(4,...totals);const iw=w-pad.l-pad.r,ih=h-pad.t-pad.b;const bw=iw/n;
+  x.font='11px system-ui';x.fillStyle='#94a3b8';x.strokeStyle='#2b3a50';x.textAlign='right';
+  for(let g=0;g<=4;g++){const v=Math.round(max*g/4);const y=pad.t+ih-ih*g/4;x.beginPath();x.moveTo(pad.l,y);x.lineTo(w-pad.r,y);x.stroke();x.fillText(v,pad.l-4,y+4)}
+  x.textAlign='center';
+  const step=Math.ceil(n/7);
+  for(let i=0;i<n;i++){let y=pad.t+ih;
+    series.forEach((s,k)=>{const bh=ih*s[i]/max;x.fillStyle=colors[k];x.fillRect(pad.l+i*bw+bw*.15,y-bh,bw*.7,bh);y-=bh});
+    if(i%step===0){x.fillStyle='#94a3b8';x.fillText(labels[i],pad.l+i*bw+bw/2,h-6)}}
+}
+function drawTrends(){
+  const d=days(range);
+  bars($('#c1'),d.map(x=>x.label),[d.map(x=>x.cig),d.map(x=>x.vape)],['#ff7a45','#36cfc9']);
+  const from=startOfDay(Date.now())-(range-1)*DAY;const hrs=Array(24).fill(0);
+  S.logs.filter(l=>l.t>=from).forEach(l=>hrs[new Date(l.t).getHours()]++);
+  bars($('#c2'),hrs.map((_,i)=>String(i)),[hrs],['#a78bfa']);
+}
+
+/* ---------- events ---------- */
+function bind(){
+  document.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>add(b.dataset.add));
+  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>removeLog(b.dataset.del));
+  document.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>{range=+b.dataset.r;render()});
+  document.querySelectorAll('[data-start]').forEach(b=>b.onclick=()=>{let d=+b.dataset.start;
+    if(!d){d=parseInt(prompt('How many days?','5'),10);if(!d||d<1)return}
+    startBreak(Math.min(d,365),$('#incv')&&$('#incv').checked)});
+  document.querySelectorAll('[data-step]').forEach(b=>b.onclick=()=>{
+    const [t,dl]=b.dataset.step.split(':');const k=t==='cig'?'cigLimit':'vapeLimit';
+    const cur=S.settings[k];S.settings[k]=cur==null?(dl>0?Math.max(1,Math.round(days(7).reduce((s,x)=>s+x[t],0)/7)):null):Math.max(0,cur+ +dl);save();render()});
+  document.querySelectorAll('[data-man]').forEach(b=>b.onclick=()=>{const v=$('#mt').value;if(!v)return toast('Pick a date and time');
+    const t=new Date(v).getTime();if(t>Date.now()+60000)return toast('That time is in the future');add(b.dataset.man,t)});
+  document.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>act(b.dataset.act));
+}
+function act(a){
+  if(a==='undo')undo();
+  else if(a==='manual'){const m=$('#manual');m.classList.toggle('hide');const d=new Date(Date.now()-new Date().getTimezoneOffset()*60000);$('#mt').value=d.toISOString().slice(0,16)}
+  else if(a==='dismiss'){S.notice=null;save();render()}
+  else if(a==='stopbreak'){if(confirm('End the challenge?'))endBreakEarly()}
+  else if(a==='suggest'){const avg=days(7).reduce((s,x)=>s+x.cig,0)/7;S.settings.cigLimit=Math.max(0,Math.round(avg)-1);save();render();toast('Limit set to '+S.settings.cigLimit+' per day')}
+  else if(a==='nolimit'){S.settings.cigLimit=S.settings.vapeLimit=null;save();render()}
+  else if(a==='csv')exportCsv();
+  else if(a==='reset'){if(confirm('Delete ALL your data? This cannot be undone.')){S=blank();save();render()}}
+}
+function exportCsv(){
+  const rows=['timestamp,type'].concat(S.logs.map(l=>new Date(l.t).toISOString()+','+l.type));
+  const b=new Blob([rows.join('\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='quitlog.csv';a.click();
+}
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{view=b.dataset.v;window.scrollTo(0,0);render()});
+
+/* ---------- live timers ---------- */
+function tick(){
+  checkComplete();
+  const a=S.active;
+  if(a&&$('#brkT')){const el=Date.now()-a.start,tot=a.days*DAY;
+    $('#brkT').textContent=dur(el);$('#brkR').textContent=dur(tot-el)+' to go';$('#brkB').style.width=Math.min(100,el/tot*100)+'%';
+    const idx=Math.floor(el/(45*60000));const m=milestoneMsg(el);
+    $('#brkM').textContent=(Math.floor(el/60000)%2===0&&el>3*3600000&&MILESTONES.every(([t])=>Math.abs(el-t)>3600000))?GENERIC[idx%GENERIC.length]:m}
+  const g=$('#gap');if(g){const lc=lastLog('cig');if(lc)g.innerHTML='Since last cigarette: <b>'+dur(Date.now()-lc)+'</b>'}
+}
+setInterval(tick,1000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){checkComplete();render()}});
+window.addEventListener('resize',()=>{if(view==='trends')drawTrends()});
+
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+render();
+})();
+</script>
+</body>
+</html>
